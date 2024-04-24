@@ -1,0 +1,8 @@
+torch
+numpy
+pandas
+pillow
+tqdm
+primefac
+scipy
+texttable
