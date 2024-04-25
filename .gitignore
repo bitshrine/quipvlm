@@ -8,9 +8,11 @@ textvqa
 multimodal
 
 vqav2/Images/*
-vqav2/Results/*
-vqav2/Annotations/*
-vqav2/Questions/*
+!vqav2/Images/README.md
+vqav2/Results/*.json
+vqav2/Results/*.jsonl
+vqav2/Annotations/*.json
+vqav2/Questions/*.json
 
 *.safetensors
 *.ipynb

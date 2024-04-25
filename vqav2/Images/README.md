@@ -1,0 +1,2 @@
+# Images
+Add image folders here. Note that this directory should follow the structure of the question file, i.e. if the question file is `v2_OpenEnded_mscoco_val2014_questions.json`, then this directory should contain `mscoco/` which itself contains `val2014/` downloaded from the website.
