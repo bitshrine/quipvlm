@@ -230,7 +230,7 @@ def llava_sequential(model, dataloader, args, dev):
     if (vision_bits < 16):
         print(f'Quantizing vision model to {vision_bits} bits')
         # The first layer is a Conv2D layer, should only be included
-        # when --include-conv
+        # when not --exclude-conv
         vision_blocks = []
         if (not args.exclude_conv):
             vision_blocks.append(CatchConfig([('vision_model.embeddings.patch_embedding', model.vision_tower.vision_model.embeddings.patch_embedding)], (3, image_size, image_size)))
@@ -239,11 +239,11 @@ def llava_sequential(model, dataloader, args, dev):
         block_end_idx = None
         if (args.skip_last_vision):
             block_end_idx = -1
-        vision_blocks.append([
+        vision_blocks.append(
             CatchConfig([*find_layers(model.vision_tower, layers=[CLIPEncoderLayer]).items()][:block_end_idx],
                         (viz_num_pos_embeds, model.vision_tower.config.hidden_size),
                         cache={'attention_mask': None, 'causal_attention_mask': None})
-        ])
+        )
         for layer_block in vision_blocks:
             vision_quantizers = quant_sequential(model, model.vision_tower, layer_block, dataloader, wbits=vision_bits, dev=dev)
             quantizers.update({f'vision_tower.{n}': q for n, q in vision_quantizers.items()})
@@ -257,7 +257,7 @@ def llava_sequential(model, dataloader, args, dev):
                         (1, viz_num_patches, model.vision_tower.config.hidden_size)),
         ]
         # Last layer is a block of its own
-        if (not args.skip_last_projector):
+        if (not args.skip_last_proj):
             projector_blocks.append(
                 CatchConfig([('linear_2', model.multi_modal_projector.linear_2)],
                         (viz_num_patches, 4096))
@@ -498,7 +498,7 @@ if __name__ == '__main__':
     parser.add_argument('--skip-last-language', action='store_true', help='Whether to skip the last layer of the language model during quantization')
     parser.add_argument('--skip-last-proj', action="store_true", help='Whether to skip the last layer of the projector model during quantization')
     parser.add_argument('--skip-last-vision', action="store_true", help='Whether to skip the last layer of the vision model during quantization')
-    parser.add_argument('--include-conv', action="store_true", help='Whether to include Conv2D and Conv1D layers in quantization')
+    parser.add_argument('--exclude-conv', action="store_false", help='Whether to include Conv2D and Conv1D layers in quantization')
 
     parser.add_argument(
         '--incoh_processing',
@@ -564,7 +564,7 @@ if __name__ == '__main__':
 
     if args.eval:
         from multimodalutils import *
-        eval_vqav2(model, args.model, 'vqav2/v2_OpenEnded_mscoco_val2014_questions.json')
+        eval_vqav2(args, model, 'v2_OpenEnded_mscoco_val2014_questions.json')
     
     if args.test_generation:
         gpus = [torch.device('cuda:%d' % i) for i in range(torch.cuda.device_count())]

@@ -2,11 +2,15 @@
 __pycache__
 .vscode
 
-vqav2
 coco
 gqa
 textvqa
 multimodal
+
+vqav2/Images/*
+vqav2/Results/*
+vqav2/Annotations/*
+vqav2/Questions/*
 
 *.safetensors
 *.ipynb

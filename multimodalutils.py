@@ -106,28 +106,46 @@ def get_llava_instruct_150k_data(nsamples: int = 128, seed: int = 0) -> pd.DataF
 
     return concat, list(samples['image_data'])
 
-def eval_vqav2(model, processor_identifier: str, questions_path: str, template='USER:<image>\n{question} Answer with a single word or phrase.\nASSISTANT:'):
+def eval_vqav2(args, model, questions_file: str, template='USER:<image>\n{question} Answer with a single word or phrase.\nASSISTANT:'):
     from tqdm import tqdm
     from transformers import AutoProcessor
     import json
-    processor = AutoProcessor.from_pretrained(processor_identifier)
+    from vqav2.PythonEvaluationTools.vqaEvalDemo import eval
+    processor = AutoProcessor.from_pretrained(args.model)
 
-    base_path = '/'.join(questions_path.split('/')[:-1])
-    json_questions = json.loads(open(questions_path).read())
+    base_path = 'vqav2/'
+
+
+    #base_path = '/'.join(questions_path.split('/')[:-1])
+    json_questions = json.loads(open(base_path + 'Questions/' + questions_file).read())
     version = 'v' + json_questions['info']['version'].split('.')[0]
     task_type = ''.join(json_questions['task_type'].split('-'))
     data_type = json_questions['data_type']
     data_subtype = json_questions['data_subtype']
+    result_type = type(model).__name__ + '-v{}p{}l{}'.format(*args.wbits)
 
-    img_dir = base_path + f'/{data_subtype}'
-    response_file = base_path + f'/{version}_{task_type}_{data_type}_{data_subtype}_responses.jsonl'
+    img_dir = base_path + f'Images/{data_type}/{data_subtype}'
+    # Store all answers as a .jsonl file first, for progressive evaluation (write every answer
+    # as the model generates them, and on subsequent executions skip a question if the answer
+    # is already present in the file)
+    response_file = base_path + f'Results/{version}_{task_type}_{data_type}_{data_subtype}_{result_type}_unformatted_responses.jsonl'
+    # vqav2 requires a .json file of a single array of json objects, which
+    # we create from the unformatted responses once all the questions have been answered.
+    results_file = base_path + f'Results/{version}_{task_type}_{data_type}_{data_subtype}_{result_type}_results.json'
 
     questions_df = pd.DataFrame(json_questions['questions'])
     questions_df['image_path'] = questions_df['image_id'] \
                                 .map(lambda id: f"{img_dir}/COCO_{data_subtype}_{id:012d}.jpg")
+    
+    try:
+        answered_questions = pd.read_json(response_file, lines=True)['question_id'].unique()
+    except:
+        answered_questions = pd.Series()
 
-    with open(response_file, 'w+', 1) as f_out:
-        for img_path, sub_df in tqdm(questions_df.groupby(by='image_path'), desc="Evaluating VQAV2..."):
+    remaining_questions = questions_df.loc[~questions_df['question_id'].isin(answered_questions)]
+
+    with open(response_file, 'a+', 1) as f_out:
+        for img_path, sub_df in tqdm(remaining_questions.groupby(by='image_path'), desc="Evaluating VQAV2..."):
             qimage = Image.open(img_path)
 
             for _, row in sub_df.iterrows():
@@ -144,3 +162,9 @@ def eval_vqav2(model, processor_identifier: str, questions_path: str, template='
 
                 f_out.write(json.dumps(res) + '\n')
 
+    print('All questions answered.')
+    answer_df = pd.read_json(response_file, lines=True)
+    answer_df.to_json(results_file, mode='w', orient='records')
+    print(f'Formatted results written to {results_file}\n Launching evaluation...')
+    
+    eval(version + '_', task_type, data_type, data_subtype, result_type)
