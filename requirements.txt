@@ -6,3 +6,4 @@ tqdm
 primefac
 scipy
 texttable
+transformers
