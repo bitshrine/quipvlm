@@ -14,5 +14,8 @@ vqav2/Results/*.jsonl
 vqav2/Annotations/*.json
 vqav2/Questions/*.json
 
+seed1/*
+!seed1/README.md
+
 *.safetensors
 *.ipynb

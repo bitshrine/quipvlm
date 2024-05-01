@@ -168,3 +168,81 @@ def eval_vqav2(args, model, questions_file: str, template='USER:<image>\n{questi
     print(f'Formatted results written to {results_file}\n Launching evaluation...')
     
     eval(version + '_', task_type, data_type, data_subtype, result_type)
+
+
+def eval_seed1(args, model, question_file: str = 'SEED-Bench.json', template: str = 'USER:<image>\n{question} Answer with a single word or phrase.\nASSISTANT: '):
+    import json
+    from tqdm import tqdm
+    import numpy as np
+    from transformers import AutoProcessor
+
+    processor = AutoProcessor.from_pretrained(args.model)
+
+    base_path = 'seed1/'
+    question_file = 'SEED-Bench.json'
+
+    seed_json = json.loads(open(base_path + question_file).read())
+    full_df = pd.DataFrame(seed_json['questions'])
+    # Only keep image tasks
+    image_task_df = full_df.loc[full_df['question_type_id'] <= 9]
+    image_task_df['image_path'] = image_task_df['data_id'].map(lambda x: base_path + 'SEED-Bench-image/' + x)
+
+    response_file = base_path + type(model).__name__ + '-v{}p{}l{}'.format(*args.wbits) + '.jsonl'
+    results_file = base_path + type(model).__name__ + '-v{}p{}l{}'.format(*args.wbits) + '_results.txt'
+
+    try:
+        answered_questions = pd.read_json(response_file, lines=True)['question_id'].unique()
+    except:
+        answered_questions = pd.Series()
+
+    remaining_questions = image_task_df.loc[~image_task_df['question_id'].isin(answered_questions)]
+
+    with open(response_file, 'a+', 1) as f_out:
+        for img_path, sub_df in tqdm(remaining_questions.groupby(by='image_path'), desc="Evaluating SEED-1..."):
+            qimage = Image.open(img_path)
+
+            for _, row in sub_df.iterrows():
+                
+                question = template.format(question=row['question'])
+                all_losses = []
+                for choice in ['a', 'b', 'c', 'd']:
+                    cand = row['choice_' + choice]
+                    answer_input_ids = processor(text=cand).input_ids.unsqueeze(0)
+
+                    prompt = question + cand
+                    inputs = processor(text=prompt, images=[qimage])
+                    
+                    num_mask = answer_input_ids.shape[1]
+                    labels = inputs.input_ids.clone()
+                    labels[:, :-1 * (num_mask)] = -100
+                    output = model(**inputs, labels=labels)
+                    all_losses.append(output.loss.item())
+                
+                class_ranks = np.argsort(all_losses)
+                pred_id = ['A','B','C','D'][class_ranks[0]]
+
+
+                res = {
+                    "question_id": str(row['question_id']),
+                    "prediction": pred_id,
+                }
+
+                f_out.write(json.dumps(res) + '\n')
+
+    responses_df = pd.read_json(response_file, lines=True)
+    responses_df['question_id'] = responses_df['question_id'].astype(str)
+    image_task_df['question_id'] = image_task_df['question_id'].astype(str)
+
+    joined_df = responses_df.merge(image_task_df)
+
+    acc = len(joined_df.loc[joined_df['prediction'] == joined_df['answer']]) / len(joined_df)
+    
+    results = f"""
+    ======== SEED-1 RESULTS ========
+    Total # of questions:   {len(image_task_df)}
+    Accuracy:               {acc}
+"""
+    
+    print(results)
+    with open(results_file, 'w+') as out:
+        out.write(results)
