@@ -544,6 +544,7 @@ if __name__ == '__main__':
         model = load_quant(args.model, args.load, args.wbits, args.groupsize)
     else:
         model = get_llava(args.model)
+        model.half()
         model.eval()
 
     dataloader, testloader = get_loaders(args.dataset, nsamples=args.nsamples, seed=args.seed, model=args.model, seqlen=model.seqlen)

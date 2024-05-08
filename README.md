@@ -12,6 +12,12 @@ Code built on top of the [QuIP](https://github.com/Cornell-RelaxML/QuIP) reposit
 python llava.py llava-hf/llava-1.5-7b-hf llava_instruct_150k --wbits 4 --nsamples 128 [--save quantized.safetensors] --quant gptq --pre_gptqH [--eval vqav2 seed1] [--skip_last_{vision,proj,language}]
 ```
 
+### LDLQ (QuIP):
+```bash
+python llava.py llava-hf/llava-1.5-7b-hf llava_instruct_150k --wbits 4 --nsamples 128 [--save quantized.safetensors] --quant ldlq --incoh_processing [--eval vqav2 seed1] [--skip_last_{vision,proj,language}]
+```
+Quantization of `Conv2d` and `Conv1d` layers is not implemented by the authors for QuIP (see [original implementation](https://github.com/Cornell-RelaxML/QuIP/blob/ac92cfc7a22f6100009e2caf53bb72257d3f3184/bal.py#L24))
+
 **Parameters:**
 |Parameter|Description|
 |--|--|
@@ -19,10 +25,12 @@ python llava.py llava-hf/llava-1.5-7b-hf llava_instruct_150k --wbits 4 --nsample
 |`--skip_last_{language,proj,vision}`|if set, skips the last layer of the specified block|
 |`--exclude-conv`|Whether to exclude `nn.Conv2D` layers in the quantization process (i.e. only quantize linear layers)|
 
-Notes:
+**Notes:**
 - `--skip_last_vision` skips `model.vision_tower.vision_model.encoder.layers.23.mlp.fc2`
 - `--skip_last_proj` skips the `linear_2` layer of the projector
 - `--skip_last_language` skips the `lm_head` layer
+
+- `--incoh_processing` (necessary argument when running QuIP / LDLQ) is a "meta argument which sets the following flags `--pre_gptqH --pre_rescale --pre_proj --qfn b`" (from the original QuIP README)
 
 
 ## Evaluation
