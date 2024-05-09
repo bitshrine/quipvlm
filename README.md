@@ -30,7 +30,7 @@ python llava.py llava-hf/llava-1.5-7b-hf llava_instruct_150k --wbits 4 --nsample
 
 **BLIP-2**
 ```bash
-python blip2.py Salesforce/blip2-opt-2.7b llava_instruct_150k --wbits 8 --nsamples 1128 --quant ldlq --incoh_processing --eval
+python blip2.py Salesforce/blip2-opt-2.7b llava_instruct_150k --wbits 8 --nsamples 128 --quant ldlq --incoh_processing --eval
 ```
 
 **Parameters:**
