@@ -63,8 +63,8 @@ def get_blip2(model):
     torch.nn.init.normal_ = skip
     from transformers import Blip2ForConditionalGeneration
     model = Blip2ForConditionalGeneration.from_pretrained(model, torch_dtype='auto')
-    #model.seqlen = 2048
-    model.seqlen = 1024 #model.config.text_config.max_position_embeddings
+    model.seqlen = 1024
+    model.config.max_length = model.seqlen
     return model
 
 
@@ -582,12 +582,13 @@ if __name__ == '__main__':
     #    eval_vqav2(args, model, 'v2_OpenEnded_mscoco_val2014_questions.json')
 
     if args.eval is not None:
+        template = 'Question: {question}\nAnswer:'
         from multimodalutils import *
         for bench in args.eval:
             if (bench == 'vqav2'):
-                eval_vqav2(args, model, 'v2_OpenEnded_mscoco_val2014_questions.json')
+                eval_vqav2(args, model, 'v2_OpenEnded_mscoco_val2014_questions.json', template='Answer using a single word or phrase. Question: {question} Answer:')
             elif (bench == 'seed1'):
-                eval_seed1(args, model, '')
+                eval_seed1(args, model, '', template='Question: {question} Answer:')
             
     
     #if args.test_generation:

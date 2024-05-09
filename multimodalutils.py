@@ -1,6 +1,7 @@
 from os import path
 import pandas as pd
 from PIL import Image
+import torch
 
 """
 # Multimodal GPTQ
@@ -108,10 +109,12 @@ def get_llava_instruct_150k_data(nsamples: int = 128, seed: int = 0) -> pd.DataF
 
 def eval_vqav2(args, model, questions_file: str, template='USER:<image>\n{question} Answer with a single word or phrase.\nASSISTANT:'):
     from tqdm import tqdm
-    from transformers import AutoProcessor
+    from transformers import AutoProcessor, LlavaForConditionalGeneration
     import json
     from vqav2.PythonEvaluationTools.vqaEvalDemo import eval
     processor = AutoProcessor.from_pretrained(args.model)
+
+    generate_returns_prompt = type(model) in [LlavaForConditionalGeneration] # LLaVA returns the prompt with the answer, BLIP-2 only returns the answer
 
     base_path = 'vqav2/'
 
@@ -151,13 +154,14 @@ def eval_vqav2(args, model, questions_file: str, template='USER:<image>\n{questi
             for _, row in sub_df.iterrows():
                 
                 question = template.format(question=row['question'])
-                inputs = processor(text=question, images=[qimage])
-                generate_ids = model.generate(**inputs, max_new_tokens=15) # It's ok to constrain this since the VQAv2 answers are never long
-                answer = processor.batch_decode(generate_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True, clean_up_tokenization_spaces = False)[0]
+                inputs = processor(text=question, images=[qimage], return_tensors="pt").to(dtype=torch.float16)
+                generate_ids = model.generate(**inputs, max_length=inputs.input_ids.shape[1] + 32)
+                answer_start_idx = inputs.input_ids.shape[1] if generate_returns_prompt else None
+                answer = processor.batch_decode(generate_ids[:, answer_start_idx:], skip_special_tokens=True, clean_up_tokenization_spaces = False)[0]
 
                 res = {
                     "question_id": str(row['question_id']),
-                    "answer": answer,
+                    "answer": answer.strip(),
                 }
 
                 f_out.write(json.dumps(res) + '\n')
@@ -207,10 +211,10 @@ def eval_seed1(args, model, question_file: str = 'SEED-Bench.json', template: st
                 all_losses = []
                 for choice in ['a', 'b', 'c', 'd']:
                     cand = row['choice_' + choice]
-                    answer_input_ids = processor(text=cand).input_ids.unsqueeze(0)
+                    answer_input_ids = processor(text=cand, return_tensors="pt").to(dtype=torch.float16).input_ids.unsqueeze(0)
 
                     prompt = question + cand
-                    inputs = processor(text=prompt, images=[qimage])
+                    inputs = processor(text=prompt, images=[qimage], return_tensors="pt").to(dtype=torch.float16)
                     
                     num_mask = answer_input_ids.shape[1]
                     labels = inputs.input_ids.clone()
