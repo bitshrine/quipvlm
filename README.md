@@ -7,16 +7,31 @@ Code built on top of the [QuIP](https://github.com/Cornell-RelaxML/QuIP) reposit
 
 ## Quantization
 
+> Quantization of `Conv2d` and `Conv1d` layers is not implemented by the authors for QuIP (see [original implementation](https://github.com/Cornell-RelaxML/QuIP/blob/ac92cfc7a22f6100009e2caf53bb72257d3f3184/bal.py#L24))
+
+The same data is used for both LLaVA and BLIP-2 calibration, sourced from the [llava_instruct_150k](https://huggingface.co/datasets/liuhaotian/LLaVA-Instruct-150K) dataset.
 ### GPTQ:
+
+**LLaVA 1.5**
 ```bash
 python llava.py llava-hf/llava-1.5-7b-hf llava_instruct_150k --wbits 4 --nsamples 128 [--save quantized.safetensors] --quant gptq --pre_gptqH [--eval vqav2 seed1] [--skip_last_{vision,proj,language}]
 ```
 
+**BLIP-2**
+```bash
+python blip2.py Salesforce/blip2-opt-2.7b llava_instruct_150k --wbits 8 --nsamples 1128 --quant gptq --pre_gptqH --eval
+```
+
 ### LDLQ (QuIP):
+**LLaVA 1.5**
 ```bash
 python llava.py llava-hf/llava-1.5-7b-hf llava_instruct_150k --wbits 4 --nsamples 128 [--save quantized.safetensors] --quant ldlq --incoh_processing [--eval vqav2 seed1] [--skip_last_{vision,proj,language}]
 ```
-Quantization of `Conv2d` and `Conv1d` layers is not implemented by the authors for QuIP (see [original implementation](https://github.com/Cornell-RelaxML/QuIP/blob/ac92cfc7a22f6100009e2caf53bb72257d3f3184/bal.py#L24))
+
+**BLIP-2**
+```bash
+python blip2.py Salesforce/blip2-opt-2.7b llava_instruct_150k --wbits 8 --nsamples 1128 --quant ldlq --incoh_processing --eval
+```
 
 **Parameters:**
 |Parameter|Description|
