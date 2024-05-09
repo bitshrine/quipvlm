@@ -211,12 +211,12 @@ def eval_seed1(args, model, question_file: str = 'SEED-Bench.json', template: st
                 all_losses = []
                 for choice in ['a', 'b', 'c', 'd']:
                     cand = row['choice_' + choice]
-                    answer_input_ids = processor(text=cand, return_tensors="pt").to(dtype=torch.float16).input_ids.unsqueeze(0)
+                    answer_input_ids = processor(text=cand, return_tensors="pt").input_ids.to(dtype=torch.float16).unsqueeze(0)
 
                     prompt = question + cand
-                    inputs = processor(text=prompt, images=[qimage], return_tensors="pt").to(dtype=torch.float16)
+                    inputs = processor(text=prompt, images=[qimage], return_tensors="pt")
                     
-                    num_mask = answer_input_ids.shape[1]
+                    num_mask = answer_input_ids.shape[-1]
                     labels = inputs.input_ids.clone()
                     labels[:, :-1 * (num_mask)] = -100
                     output = model(**inputs, labels=labels)
