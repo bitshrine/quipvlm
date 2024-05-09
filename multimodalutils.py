@@ -152,7 +152,7 @@ def eval_vqav2(args, model, questions_file: str, template='USER:<image>\n{questi
                 
                 question = template.format(question=row['question'])
                 inputs = processor(text=question, images=[qimage])
-                generate_ids = model.generate(**inputs, max_new_tokens=15)
+                generate_ids = model.generate(**inputs, max_new_tokens=15) # It's ok to constrain this since the VQAv2 answers are never long
                 answer = processor.batch_decode(generate_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True, clean_up_tokenization_spaces = False)[0]
 
                 res = {

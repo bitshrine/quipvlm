@@ -6,6 +6,43 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.random.manual_seed(seed)
 
+def get_blip2_calibration(nsamples, seed, seqlen, model):
+    from multimodalutils import get_llava_instruct_150k_data
+
+    # Following the same idea as text-only datasets,
+    # concatenate all conversations as `USER: <prompt> ASSISTANT: <answer>`
+    # strings and then randomly select max-length token sequences
+    # to use for the forward passes.
+    # Each batch receives one random image from the dataset. Due to this,
+    # at least one token should be replaced with 32000, the image token_id
+
+    text_data, image_data = get_llava_instruct_150k_data(nsamples=nsamples, seed=seed)
+    from transformers import AutoProcessor, BatchFeature
+    processor = AutoProcessor.from_pretrained(model)
+
+    trainenc = processor(text=text_data, images=image_data, return_tensors="pt")
+
+    import random
+    random.seed(seed)
+    trainloader = []
+    for img_id in range(nsamples):
+        i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
+        j = i + seqlen
+
+        input_ids = trainenc.input_ids[:, i:j]
+        attention_mask = trainenc.attention_mask[:, i:j]
+        pixel_values = trainenc.pixel_values[img_id].unsqueeze(0)
+        #input_ids[:, 0] = 32000
+
+        inp = BatchFeature(data={"input_ids": input_ids,
+                                 "attention_mask":attention_mask,
+                                 "pixel_values": pixel_values})
+        tar = inp.input_ids.clone()
+        tar[:-1] = -100
+        trainloader.append((inp, tar))
+    
+    return trainloader, None
+
 def get_llava_instruct_150k(nsamples, seed, seqlen, model):
     from multimodalutils import get_llava_instruct_150k_data
 
@@ -32,7 +69,7 @@ def get_llava_instruct_150k(nsamples, seed, seqlen, model):
         input_ids = trainenc.input_ids[:, i:j]
         input_ids[:, 0] = 32000
 
-        inp = BatchFeature(data={"input_ids": trainenc.input_ids[:, i:j],
+        inp = BatchFeature(data={"input_ids": input_ids,
                                  "attention_mask":trainenc.attention_mask[:, i:j],
                                  "pixel_values": trainenc.pixel_values[img_id].unsqueeze(0)})
         tar = inp.input_ids.clone()
@@ -224,3 +261,5 @@ def get_loaders(name, nsamples=128, seed=0, seqlen=2048, model=''):
         return get_c4(nsamples, seed, seqlen, model)
     if 'llava_instruct_150k' in name:
         return get_llava_instruct_150k(nsamples, seed, seqlen, model)
+    if 'blip2-calibration' in name:
+        return get_blip2_calibration(nsamples, seed, seqlen, model)

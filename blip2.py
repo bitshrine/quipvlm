@@ -53,7 +53,7 @@ def transform_layer(model: nn.Module, name: str, transform: typing.Callable[[nn.
     parent_layer._modules[name_parts[-1]] = transform(parent_layer._modules[name_parts[-1]])
     return parent_layer._modules[name_parts[-1]]
 
-def get_llava(model):
+def get_blip2(model):
 
     def skip(*args, **kwargs):
         pass
@@ -61,10 +61,10 @@ def get_llava(model):
     torch.nn.init.kaiming_uniform_ = skip
     torch.nn.init.uniform_ = skip
     torch.nn.init.normal_ = skip
-    from transformers import LlavaForConditionalGeneration
-    model = LlavaForConditionalGeneration.from_pretrained(model, torch_dtype='auto')
+    from transformers import Blip2ForConditionalGeneration
+    model = Blip2ForConditionalGeneration.from_pretrained(model, torch_dtype='auto')
     #model.seqlen = 2048
-    model.seqlen = 4096
+    model.seqlen = 1024 #model.config.text_config.max_position_embeddings
     return model
 
 
@@ -96,6 +96,7 @@ def quant_sequential(full_model: nn.Module, model: nn.Module, catch_config: Catc
             for k in cache.keys() - 'i':
                 if (k in cachable_args.keys()):
                     cache[k] = cachable_args[k]
+
             raise ValueError
         
     transform_layer(model, layers[0].name, lambda layer: Catcher(layer).to(dev))
@@ -215,16 +216,18 @@ def quant_sequential(full_model: nn.Module, model: nn.Module, catch_config: Catc
 
 
 @torch.no_grad()
-def llava_sequential(model, dataloader, args, dev):
+def blip2_sequential(model, dataloader, args, dev):
 
-    from transformers.models.clip.modeling_clip import CLIPEncoderLayer
-    from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+    #from transformers.models.clip.modeling_clip import CLIPEncoderLayer
+    from transformers.models.blip_2.modeling_blip_2 import Blip2EncoderLayer, Blip2QFormerLayer
+    from transformers.models.opt.modeling_opt import OPTDecoderLayer
+    #from transformers.models.llama.modeling_llama import LlamaDecoderLayer
     print('Starting ...')
 
     quantizers = {}
 
-    image_size = model.vision_tower.config.image_size
-    viz_num_patches = (image_size // model.vision_tower.config.patch_size) ** 2
+    image_size = model.vision_model.config.image_size
+    viz_num_patches = (image_size // model.vision_model.config.patch_size) ** 2
     viz_num_pos_embeds = viz_num_patches + 1
 
     # Quantize vision
@@ -242,31 +245,38 @@ def llava_sequential(model, dataloader, args, dev):
         if (args.skip_last_vision):
             block_end_idx = -1
         vision_blocks.append(
-            CatchConfig([*find_layers(model.vision_tower, layers=[CLIPEncoderLayer]).items()][:block_end_idx],
-                        (viz_num_pos_embeds, model.vision_tower.config.hidden_size),
-                        cache={'attention_mask': None, 'causal_attention_mask': None})
+            CatchConfig([*find_layers(model.vision_model, layers=[Blip2EncoderLayer]).items()][:block_end_idx],
+                        (viz_num_pos_embeds, model.vision_model.config.hidden_size),
+                        cache={'attention_mask': None})
         )
         for layer_block in vision_blocks:
-            vision_quantizers = quant_sequential(model, model.vision_tower, layer_block, dataloader, wbits=vision_bits, dev=dev)
-            quantizers.update({f'vision_tower.{n}': q for n, q in vision_quantizers.items()})
+            vision_quantizers = quant_sequential(model, model.vision_model, layer_block, dataloader, wbits=vision_bits, dev=dev)
+            quantizers.update({f'vision_model.{n}': q for n, q in vision_quantizers.items()})
 
-    # Quantize multimodal projector
+    # Quantize multimodal projection block in BLIP-2
+    # This consists of a 'qformer' block followed by a language projection layer
     projector_bits = args.wbits[1]
     if (projector_bits < 16):
         print(f'Quantizing projector to {projector_bits} bits')
         projector_blocks = [
-            CatchConfig([('linear_1', model.multi_modal_projector.linear_1)],
-                        (1, viz_num_patches, model.vision_tower.config.hidden_size)),
+            #CatchConfig([('linear_1', model.multi_modal_projector.linear_1)],
+            #            (1, viz_num_patches, model.vision_tower.config.hidden_size)),
+            CatchConfig([*find_layers(model.qformer, layers=[Blip2QFormerLayer]).items()],
+                        (model.config.num_query_tokens, model.qformer.config.hidden_size),
+                        cache={'attention_mask': None, 'encoder_hidden_states': None, 'query_length': 0})
         ]
-        # Last layer is a block of its own
-        if (not args.skip_last_proj):
-            projector_blocks.append(
-                CatchConfig([('linear_2', model.multi_modal_projector.linear_2)],
-                        (viz_num_patches, 4096))
-            )
         for layer_block in projector_blocks:
-            projector_quantizers = quant_sequential(model, model.multi_modal_projector, layer_block, dataloader, wbits=projector_bits, dev=dev)
-            quantizers.update({f'multi_modal_projector.{n}': q for n, q in projector_quantizers.items()})
+            projector_quantizers = quant_sequential(model, model.qformer, layer_block, dataloader, wbits=projector_bits, dev=dev)
+            quantizers.update({f'qformer.{n}': q for n, q in projector_quantizers.items()})
+    
+        # Skip language projection
+        if (not args.skip_last_proj):
+            lm_proj_block = CatchConfig([
+                ('language_projection', model.language_projection)],
+                (model.config.num_query_tokens, model.qformer.config.hidden_size)
+            )
+            language_proj_quantizer = quant_sequential(model, model, lm_proj_block, dataloader, wbits=projector_bits, dev=dev)
+            quantizers.update({n: q for n, q in language_proj_quantizer.items()})
 
     # Quantize language model
     language_bits = args.wbits[2]
@@ -275,15 +285,15 @@ def llava_sequential(model, dataloader, args, dev):
         use_cache = model.language_model.config.use_cache
         model.language_model.config.use_cache = False
         language_blocks = [
-            CatchConfig([*find_layers(model.language_model, layers=[LlamaDecoderLayer]).items()],
-                        (model.language_model.config.hidden_size + viz_num_patches - 1, model.language_model.config.hidden_size),
-                        cache={'position_ids': None, 'attention_mask': None})
+            CatchConfig([*find_layers(model.language_model, layers=[OPTDecoderLayer]).items()],
+                        (model.seqlen + model.config.num_query_tokens, model.language_model.config.hidden_size),
+                        cache={'attention_mask': None})
         ]
         # Last layer is a block of its own
         if (not args.skip_last_language):
             language_blocks.append(
                 CatchConfig([('lm_head', model.language_model.lm_head)],
-                            (model.language_model.config.hidden_size + viz_num_patches - 1, model.language_model.config.hidden_size))
+                            (model.seqlen + model.config.num_query_tokens, model.language_model.config.hidden_size))
             )
         
         for layer_block in language_blocks:
@@ -296,10 +306,10 @@ def llava_sequential(model, dataloader, args, dev):
 
 
 @torch.no_grad()
-def llava_eval(model, testenc, dev):
+def blip2_eval(model, testenc, dev):
     pass
 
-def llama_pack(model, quantizers, wbits, groupsize):
+def blip2_pack(model, quantizers, wbits, groupsize):
     layers = find_layers(model)
     layers = {n: layers[n] for n in quantizers}
     quant.make_quant_linear(model, quantizers, wbits, groupsize)
@@ -315,8 +325,8 @@ def llama_pack(model, quantizers, wbits, groupsize):
 
 # original includes fast inference
 def load_quant_original(model, checkpoint, wbits, groupsize=-1, fused_mlp=True, eval=True, warmup_autotune=True):
-    from transformers import LlavaConfig, LlavaForConditionalGeneration, modeling_utils
-    config = LlavaConfig.from_pretrained(model)
+    from transformers import Blip2Config, Blip2ForConditionalGeneration, modeling_utils
+    config = Blip2Config.from_pretrained(model)
 
     def noop(*args, **kwargs):
         pass
@@ -328,7 +338,7 @@ def load_quant_original(model, checkpoint, wbits, groupsize=-1, fused_mlp=True, 
     torch.set_default_dtype(torch.half)
     modeling_utils._init_weights = False
     torch.set_default_dtype(torch.half)
-    model = LlavaForConditionalGeneration(config)
+    model = Blip2ForConditionalGeneration(config)
     torch.set_default_dtype(torch.float)
     if eval:
         model = model.eval()
@@ -404,7 +414,7 @@ def load_quant(model, checkpoint, wbits, groupsize=-1, eval=True):
     return model
 
 
-def llava_multigpu(model, gpus, gpu_dist):
+def blip2_multigpu(model, gpus, gpu_dist):
     pass
 
 
@@ -490,7 +500,7 @@ if __name__ == '__main__':
     parser.add_argument('--groupsize', type=int, default=-1, help='Groupsize to use for quantization; default uses full row.')
     #parser.add_argument('--eval', action='store_true', help='evaluate quantized model.')
     parser.add_argument('--eval', type=str, default='', choices=['vqav2', 'seed1'], nargs='?', const=['vqav2', 'seed1'], help='Benchmark to evaluate the model on. If none, all benchmarks are run. Available choices: [vqav2, seed1]')
-    parser.add_argument('--test-generation', action='store_true', help='test generation.')
+    #parser.add_argument('--test-generation', action='store_true', help='test generation.')
     parser.add_argument('--save', type=str, default='', help='Save quantized checkpoint under this name.')
     parser.add_argument('--load', type=str, default='', help='Load quantized model.')
     parser.add_argument('--benchmark', type=int, default=0, help='Number of tokens to use for benchmarking.')
@@ -545,15 +555,16 @@ if __name__ == '__main__':
     if args.load:
         model = load_quant(args.model, args.load, args.wbits, args.groupsize)
     else:
-        model = get_llava(args.model)
+        model = get_blip2(args.model)
         model.half()
         model.eval()
 
+    args.dataset = 'blip2-calibration'
     dataloader, testloader = get_loaders(args.dataset, nsamples=args.nsamples, seed=args.seed, model=args.model, seqlen=model.seqlen)
 
     if not args.load and any(map(lambda x: x < 16, args.wbits)):
         tick = time.time()
-        quantizers = llava_sequential(model, dataloader, args, DEV)
+        quantizers = blip2_sequential(model, dataloader, args, DEV)
         print(time.time() - tick)
 
     # if args.benchmark:
@@ -579,19 +590,19 @@ if __name__ == '__main__':
                 eval_seed1(args, model, '')
             
     
-    if args.test_generation:
-        gpus = [torch.device('cuda:%d' % i) for i in range(torch.cuda.device_count())]
-        if len(gpus) > 1:
-            llava_multigpu(model, gpus, gpu_dist)
-        else:
-            model = model.to(DEV)
+    #if args.test_generation:
+    #    gpus = [torch.device('cuda:%d' % i) for i in range(torch.cuda.device_count())]
+    #    if len(gpus) > 1:
+    #        blip2_multigpu(model, gpus, gpu_dist)
+    #    else:
+    #        model = model.to(DEV)
 
-        from transformers import LlamaTokenizer, TextStreamer
-        tokenizer = LlamaTokenizer.from_pretrained(args.model, use_fast=False)
-        input_ids = tokenizer(["The capital of New Mexico is"], return_tensors="pt").input_ids.to(gpus[0])
-        streamer = TextStreamer(tokenizer)
-        with torch.no_grad():
-            generated_ids = model.generate(input_ids, streamer=streamer)
+    #    from transformers import LlamaTokenizer, TextStreamer
+    #    tokenizer = LlamaTokenizer.from_pretrained(args.model, use_fast=False)
+    #    input_ids = tokenizer(["The capital of New Mexico is"], return_tensors="pt").input_ids.to(gpus[0])
+    #    streamer = TextStreamer(tokenizer)
+    #    with torch.no_grad():
+    #        generated_ids = model.generate(input_ids, streamer=streamer)
 
     # if args.quant_directory is not None:
     #     export_quant_table(quantizers, args.quant_directory)
