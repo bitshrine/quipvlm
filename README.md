@@ -74,3 +74,17 @@ quip
     ├── SEED-Bench.json
 ```
 The results of the evaluation are written to a `.jsonl` file within the `seed1` directory. Once all questions have been answered, the script computes the accuracy of the model and writes the results in a `.txt` file.
+
+### GQA
+The benchmark requires the images to be downloaded locally to `gqa/images`, and the question, choices, and scene graph files to be placed in `gqa/questions`. The files can be downloaded [here](https://cs.stanford.edu/people/dorarad/gqa/download.html). For the `val` split, the directory structure should be the following:
+```
+quip
+├── README.md
+├── gqa/
+    ├── eval.py
+    ├── images
+    ├── questions/
+        ├── val_all_questions.json
+        ├── val_choices.json
+        ├── val_sceneGraphs.json
+```

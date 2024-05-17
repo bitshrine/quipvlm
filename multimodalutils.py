@@ -183,7 +183,6 @@ def eval_seed1(args, model, question_file: str = 'SEED-Bench.json', template: st
     processor = AutoProcessor.from_pretrained(args.model)
 
     base_path = 'seed1/'
-    question_file = 'SEED-Bench.json'
 
     seed_json = json.loads(open(base_path + question_file).read())
     full_df = pd.DataFrame(seed_json['questions'])
@@ -250,3 +249,69 @@ def eval_seed1(args, model, question_file: str = 'SEED-Bench.json', template: st
     print(results)
     with open(results_file, 'w+') as out:
         out.write(results)
+
+
+def eval_gqa(args, model, tier: str = 'val', template: str = 'USER:<image>\n{question} Answer with a single word or phrase.\nASSISTANT: '):
+    import json
+    from tqdm import tqdm
+    import numpy as np
+    from transformers import AutoProcessor, LlavaForConditionalGeneration
+    from gqa.eval import eval
+
+    processor = AutoProcessor.from_pretrained(args.model)
+    generate_returns_prompt = type(model) in [LlavaForConditionalGeneration] # LLaVA returns the prompt with the answer, BLIP-2 only returns the answer
+
+    base_path = 'gqa/'
+    question_dir = 'questions/'
+    image_dir = 'images/'
+
+    question_file = '{tier}_all_questions.json'.format(tier=tier)
+
+    gqa_json = pd.read_json(base_path + question_dir + question_file)
+    questions_df = gqa_json.transpose()
+
+    questions_df['image_path'] = questions_df['imageId'].map(lambda x: base_path + image_dir + x + '.jpg')
+    questions_df['questionId'] = questions_df.index
+
+    response_file = base_path + type(model).__name__ + '-v{}p{}l{}'.format(*args.wbits) + '_unformatted_responses.jsonl'
+    formatted_response_file = base_path + type(model).__name__ + '-v{}p{}l{}'.format(*args.wbits) + '_responses.json'
+    results_file = base_path + type(model).__name__ + '-v{}p{}l{}'.format(*args.wbits) + '_results.txt'
+
+    try:
+        answered_questions = pd.read_json(response_file, lines=True)['questionId'].unique()
+    except:
+        answered_questions = pd.Series()
+
+    remaining_questions = questions_df.loc[~questions_df['questionId'].isin(answered_questions)]
+
+    with open(response_file, 'a+', 1) as f_out:
+        for img_path, sub_df in tqdm(remaining_questions.groupby(by='image_path'), desc="Evaluating GQA..."):
+            qimage = Image.open(img_path)
+
+            for _, row in sub_df.iterrows():
+                
+                question = template.format(question=row['question'])
+                inputs = processor(text=question, images=[qimage], return_tensors="pt").to(dtype=torch.float16)
+                generate_ids = model.generate(**inputs, max_length=inputs.input_ids.shape[1] + 32)
+                answer_start_idx = inputs.input_ids.shape[1] if generate_returns_prompt else None
+                answer = processor.batch_decode(generate_ids[:, answer_start_idx:], skip_special_tokens=True, clean_up_tokenization_spaces = False)[0]
+
+                res = {
+                    "questionId": str(row['questionId']),
+                    "prediction": answer.strip(),
+                }
+
+                f_out.write(json.dumps(res) + '\n')
+
+    print('All questions answered.')
+    answer_df = pd.read_json(response_file, lines=True, dtype={"questionId": str, "prediction": str})
+    answer_df.to_json(formatted_response_file, orient='records')
+    print(f'Launching evaluation...')
+    
+    eval(formatted_response_file,
+         results_file=results_file,
+         tier=tier,
+         scenes='gqa/questions/{tier}_sceneGraphs.json',
+         questions='gqa/questions/{tier}_all_questions.json',
+         choices='gqa/questions/{tier}_choices.json',
+         attentions='gqa/questions/{tier}_attentions.json')

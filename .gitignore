@@ -19,3 +19,5 @@ seed1/*
 
 *.safetensors
 *.ipynb
+
+test*

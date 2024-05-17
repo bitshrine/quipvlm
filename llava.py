@@ -489,7 +489,7 @@ if __name__ == '__main__':
     parser.add_argument('--wbits', type=str, default="16", help="#bits to use for quantization; use 16 for evaluating base model. Specify the number of bits per block by passing 'vision_wbits,projector_wbits,language_wbits', ex. --wbits 16,4,16 to only quantize the projector to 4 bits")
     parser.add_argument('--groupsize', type=int, default=-1, help='Groupsize to use for quantization; default uses full row.')
     #parser.add_argument('--eval', action='store_true', help='evaluate quantized model.')
-    parser.add_argument('--eval', type=str, default='', choices=['vqav2', 'seed1'], nargs='?', const=['vqav2', 'seed1'], help='Benchmark to evaluate the model on. If none, all benchmarks are run. Available choices: [vqav2, seed1]')
+    parser.add_argument('--eval', type=str, default='', choices=['vqav2', 'seed1', 'gqa'], nargs='?', const=['vqav2', 'seed1', 'gqa'], help='Benchmark to evaluate the model on. If none, all benchmarks are run. Available choices: [vqav2, seed1]')
     parser.add_argument('--test-generation', action='store_true', help='test generation.')
     parser.add_argument('--save', type=str, default='', help='Save quantized checkpoint under this name.')
     parser.add_argument('--load', type=str, default='', help='Load quantized model.')
@@ -572,11 +572,14 @@ if __name__ == '__main__':
 
     if args.eval is not None:
         from multimodalutils import *
+        args.eval = [args.eval] if isinstance(args.eval, str) else args.eval
         for bench in args.eval:
             if (bench == 'vqav2'):
                 eval_vqav2(args, model, 'v2_OpenEnded_mscoco_val2014_questions.json')
             elif (bench == 'seed1'):
-                eval_seed1(args, model, '')
+                eval_seed1(args, model)
+            elif (bench == 'gqa'):
+                eval_gqa(args, model)
             
     
     if args.test_generation:
