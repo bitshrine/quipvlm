@@ -65,7 +65,7 @@ quip
 The results of the evaluation are written to the `vqav2/Results` directory, first in a `.jsonl` file. This is so that if the evaluation gets interrupted for some reason, it can be resumed without recomputing all answers from the beginning. Once all questions have been answered, a valid `[...]_results.json` file is generated, and the accuracy evaluation is performed. Results are printed to standard output and saved in a `Results/[...]_accuracy.json` file.
 
 ### SEED-1
-The benchmark requires the image dataset to be downloaded locally in `seed1/SEED-Bench-images`, and the question file to be placed alongside it in the `seed1` directory.
+The benchmark requires the image dataset to be downloaded locally in `seed1/SEED-Bench-images` (from [here](https://huggingface.co/datasets/AILab-CVC/SEED-Bench)), and the question file to be placed alongside it in the `seed1` directory.
 ```
 quip
 ├── README.md
