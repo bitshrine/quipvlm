@@ -14,7 +14,7 @@ The same data is used for both LLaVA and BLIP-2 calibration, sourced from the [l
 
 **LLaVA 1.5**
 ```bash
-python llava.py llava-hf/llava-1.5-7b-hf llava_instruct_150k --wbits 4 --nsamples 128 [--save quantized.safetensors] --quant gptq --pre_gptqH [--eval vqav2 seed1] [--skip_last_{vision,proj,language}]
+python llava.py llava-hf/llava-1.5-7b-hf llava_instruct_150k --wbits 4 --nsamples 128 [--save quantized.safetensors] --quant gptq --pre_gptqH [--eval vqav2 seed1] [--skip-last-{vision,proj,language}]
 ```
 
 **BLIP-2**
@@ -25,7 +25,7 @@ python blip2.py Salesforce/blip2-opt-2.7b llava_instruct_150k --wbits 8 --nsampl
 ### LDLQ (QuIP):
 **LLaVA 1.5**
 ```bash
-python llava.py llava-hf/llava-1.5-7b-hf llava_instruct_150k --wbits 4 --nsamples 128 [--save quantized.safetensors] --quant ldlq --incoh_processing [--eval vqav2 seed1] [--skip_last_{vision,proj,language}]
+python llava.py llava-hf/llava-1.5-7b-hf llava_instruct_150k --wbits 4 --nsamples 128 [--save quantized.safetensors] --quant ldlq --incoh_processing [--eval vqav2 seed1] [--skip-last-{vision,proj,language}]
 ```
 
 **BLIP-2**
