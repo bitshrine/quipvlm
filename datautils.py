@@ -259,6 +259,12 @@ def get_loaders(name, nsamples=128, seed=0, seqlen=2048, model=''):
         if 'c4-new' in name:
             return get_c4_new(nsamples, seed, seqlen, model)
         return get_c4(nsamples, seed, seqlen, model)
+    if 'seed' in name:
+        return get_seed_data(nsamples, seed, seqlen, model)
+    if 'vqa' in name:
+        return get_vqa_data(nsamples, seed, seqlen, model)
+    if 'gqa' in name:
+        return get_gqa_data(nsmaples, seed, seqlen, model)
     if 'llava_instruct_150k' in name:
         return get_llava_instruct_150k(nsamples, seed, seqlen, model)
     if 'blip2-calibration' in name:

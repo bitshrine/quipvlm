@@ -79,6 +79,7 @@ def get_llava_instruct_img(img: pd.Series) -> pd.Series:
 
     return img.map(lambda f: Image.open(f))
 
+# TODO: Modify 
 def get_llava_instruct_150k_data(nsamples: int = 128, seed: int = 0) -> pd.DataFrame:
     import numpy as np
 
